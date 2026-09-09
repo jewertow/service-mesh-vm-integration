@@ -1,0 +1,88 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: rhel-istio-proxy
+  labels:
+    app: rhel-istio-proxy
+spec:
+  dataVolumeTemplates:
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      metadata:
+        name: rhel-istio-proxy-rootdisk
+      spec:
+        sourceRef:
+          kind: DataSource
+          name: rhel9
+          namespace: openshift-virtualization-os-images
+        storage:
+          resources:
+            requests:
+              storage: 30Gi
+  runStrategy: RerunOnFailure
+  template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/flavor: small
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      labels:
+        kubevirt.io/size: small
+        # label used by `virtctl expose`
+        # vmi.kubevirt.io/id: rhel-istio-proxy
+        vm: curl
+    spec:
+      architecture: amd64
+      domain:
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+              ports:
+                - port: 22
+        features:
+          acpi: {}
+          smm:
+            enabled: true
+        firmware:
+          bootloader:
+            efi: {}
+        memory:
+          guest: 2Gi
+      networks:
+      - name: default
+        pod: {}
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: rhel-istio-proxy-rootdisk
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userData: |
+              #cloud-config
+              user: admin
+              password: admin
+              chpasswd:
+                expire: False
+              ssh_authorized_keys:
+                - __SSH_PUBLIC_KEY__
+              yum_repos:
+                baseos:
+                  name: CentOS Stream 9 - BaseOS
+                  baseurl: https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/
+                  gpgcheck: false
+                  enabled: true
+                appstream:
+                  name: CentOS Stream 9 - AppStream
+                  baseurl: https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/
+                  gpgcheck: false
+                  enabled: true
