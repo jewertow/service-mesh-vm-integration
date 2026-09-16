@@ -185,8 +185,6 @@ spec:
 EOF
 ```
 
-## TODO: either remove Istio Gateway config or remove 15012 and 15017 ports from K8S Gateway config
-
 ## Step 5: Deploy httpbin
 
 Create the `httpbin` namespace with the Istio discovery label and sidecar injection, then deploy httpbin from the upstream Istio samples:
