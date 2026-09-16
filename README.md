@@ -8,7 +8,9 @@ Integrate an external virtual machine into the Istio service mesh. The VM runs a
 - `kubectl` and `istioctl` CLI tools installed
 - An external VM or another OpenShift cluster with OpenShift Virtualization installed
 
-## Step 1: Install IstioCNI
+## Mesh setup
+
+### Step 1: Install IstioCNI
 
 Create the `istio-cni` namespace and deploy the `IstioCNI` resource:
 
@@ -31,7 +33,7 @@ Verify IstioCNI is ready:
 kubectl get istiocni default
 ```
 
-## Step 2: Install Istio control plane
+### Step 2: Install Istio control plane
 
 Create the `istio-system` namespace with the network topology label, then deploy the Istio resource configured for VM integration:
 
@@ -84,7 +86,7 @@ Verify the control plane is ready:
 kubectl get istio default
 ```
 
-## Step 3: Deploy the east-west gateway
+### Step 3: Deploy the east-west gateway
 
 Create a Kubernetes Gateway API resource to expose cross-network traffic and the control plane to the VM:
 
@@ -127,7 +129,7 @@ Verify the gateway is ready and has an external address:
 kubectl get gateway eastwestgateway -n istio-system
 ```
 
-## Step 4: Expose the control plane to the VM
+### Step 4: Expose the control plane to the VM
 
 TLSRoute is not supported in OCP 4.22, so we use a mix of APIs: the Kubernetes Gateway API deploys the actual gateway workload (Step 3), while the Istio Gateway and VirtualService APIs configure routing to the remote istiod.
 
@@ -193,7 +195,7 @@ spec:
 EOF
 ```
 
-## Step 5: Deploy httpbin
+### Step 5: Deploy httpbin
 
 Create the `httpbin` namespace with the Istio discovery label and sidecar injection, then deploy httpbin from the upstream Istio samples:
 
@@ -209,7 +211,7 @@ Verify httpbin is running:
 kubectl get pods -n httpbin
 ```
 
-## Step 6: Configure the VM namespace and WorkloadGroup
+### Step 6: Configure the VM namespace and WorkloadGroup
 
 Create a namespace for the VM workload, label it for Istio discovery, and create a service account:
 
@@ -238,7 +240,7 @@ spec:
 EOF
 ```
 
-## Step 7: Configure access logging for the proxy running in VM
+### Step 7: Configure access logging for the proxy running in VM
 
 ```bash
 kubectl apply -f - <<EOF
@@ -254,7 +256,7 @@ spec:
 EOF
 ```
 
-## Step 8: Generate VM configuration files
+### Step 8: Generate VM configuration files
 
 Use `istioctl` to generate the files the VM needs to join the mesh:
 
@@ -291,65 +293,15 @@ Patch the generated `mesh.yaml` to set the correct Envoy binary path:
 sed -i '/defaultConfig:/a\  binaryPath: /usr/bin/envoy' curl-vm-config/mesh.yaml
 ```
 
-## (Optional) VM provisioning
+## VM provisioning (optional)
 
-This guide applies to any external VM workload regardless of how it is provisioned. In this particular test environment, we used KubeVirt running in a separate OpenShift cluster to provision the VM. A sample KubeVirt VM definition with pre-configured yum repos for installing the Istio sidecar proxy is available in [vm.yaml](vm.yaml).
+This step is optional. If you already have a VM, skip to [Configuring VM](#configuring-vm). For instructions on provisioning a VM with KubeVirt, see [VM_PROVISIONING.md](VM_PROVISIONING.md).
 
-> [!Note]
-> KubeVirt VMs support direct console access via `virtctl ssh`/`virtctl console`, which does not require SSH key setup. However, this lab configures standard SSH access to simulate a real external VM that is not running on OpenShift.
-
-Generate an SSH key pair for connecting to the VM:
-
-```bash
-mkdir -p ssh
-ssh-keygen -t ed25519 -C "test@example.com" -f ./ssh/vm-key -N ""
-```
-
-Create the VM, injecting the public key into cloud-init:
-
-```bash
-kubectl create ns curl
-sed "s|__SSH_PUBLIC_KEY__|$(cat ssh/vm-key.pub)|" vm.yaml | kubectl apply -n curl -f -
-```
-
-Expose the VM with a LoadBalancer service for SSH access:
-
-```bash
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: Service
-metadata:
-  name: rhel9-ssh-lb
-  namespace: curl
-spec:
-  type: LoadBalancer
-  ports:
-  - name: ssh
-    port: 22
-    targetPort: 22
-    protocol: TCP
-  selector:
-    vm: curl
-EOF
-```
-
-Wait for the load balancer IP to be assigned:
-
-```bash
-export VM_SSH_ADDR=$(kubectl get svc rhel9-ssh-lb -n curl -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-```
-
-Verify SSH connectivity:
-
-```bash
-ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" hostname
-```
-
-## Step 9: Configure the VM
+## Configuring VM
 
 > **Prerequisite:** The VM must have the `baseos` and `appstream` repositories enabled. These provide core dependencies required by the `istio-proxy` RPM.
 
-Install the Istio sidecar:
+### Step 1: Install the Istio sidecar
 
 ```bash
 export ISTIO_PROXY_RPM_URL=<your-repo-url>
@@ -358,37 +310,39 @@ export ISTIO_PROXY_RPM_URL=<your-repo-url>
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo yum-config-manager --add-repo ${ISTIO_PROXY_RPM_URL} && sudo yum install -y --nogpgcheck --setopt=sslverify=0 istio-proxy.x86_64"
 ```
 
+### Step 2: Transfer configuration files
+
 Transfer the generated configuration files to the VM:
 
 ```bash
 scp -i ./ssh/vm-key curl-vm-config/* "admin@${VM_SSH_ADDR}":~
 ```
 
-Install the root certificate:
+### Step 3: Install the root certificate
 
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo cp root-cert.pem /etc/certs/root-cert.pem"
 ```
 
-Install the token:
+### Step 4: Install the token
 
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo mkdir -p /var/run/secrets/tokens && sudo cp istio-token /var/run/secrets/tokens/istio-token"
 ```
 
-Deploy the configuration files:
+### Step 5: Deploy configuration files
 
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo cp cluster.env /var/lib/istio/envoy/cluster.env && sudo cp mesh.yaml /etc/istio/config/mesh && sudo sh -c 'cat hosts >> /etc/hosts'"
 ```
 
-Set ownership:
+### Step 6: Set ownership
 
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo chown -R istio-proxy /var/lib/istio /etc/certs /etc/istio/proxy /etc/istio/config /var/run/secrets"
 ```
 
-Start the Istio agent:
+### Step 7: Start the Istio agent
 
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo systemctl enable --now istio-proxy"
@@ -407,7 +361,9 @@ ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "cat /var/log/istio/istio.log"
 > [2026-09-09T16:23:41.927Z] "- - -" 0 - - - "-" 52316 135070 687977 - "-" "-" "-" "-" "10.131.0.36:15012" outbound|15012||istiod.istio-system.svc.cluster.local 10.128.2.22:53452 10.128.2.22:15012 100.64.0.2:43315 istiod.istio-system.svc -
 > ```
 
-## Step 10: Verify connectivity
+## Testing connectivity
+
+### Verify connectivity to httpbin
 
 From the VM, test connectivity to httpbin running in the mesh:
 
@@ -415,9 +371,9 @@ From the VM, test connectivity to httpbin running in the mesh:
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "curl -v httpbin.httpbin.svc:8000/headers"
 ```
 
-## Step 11: Verify VM access logs
+### Verify VM access logs
 
-Confirm that the VM proxy is writing access logs to the file configured in Step 7:
+Confirm that the VM proxy is writing access logs to the file configured in the mesh setup:
 
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "cat /var/log/istio/access.log"
@@ -428,4 +384,3 @@ Expected output:
 ```
 [2026-09-09T16:40:45.630Z] "GET /headers HTTP/1.1" 200 - via_upstream - "-" 0 558 30 27 "-" "curl/7.76.1" "d5ec4032-8011-4487-901a-571f5ac07c0e" "httpbin.httpbin.svc:8000" "10.0.190.182:15443" outbound|8000||httpbin.httpbin.svc.cluster.local 10.0.2.2:43208 172.30.105.168:8000 10.0.2.2:41218 - default
 ```
-
