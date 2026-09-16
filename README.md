@@ -75,7 +75,7 @@ EOF
 > virtualInbound: unable to open file '/dev/stdout': No such device or address
 > ```
 >
-> The `vm-file-logger` can be configured for proxies running in VMs with `Telemetry` API.
+> The extension provider `vm-file-logger` enables configuring custom access log file per proxy with `Telemetry` API.
 
 
 Verify the control plane is ready:
