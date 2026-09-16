@@ -46,10 +46,16 @@ spec:
 EOF
 ```
 
-Wait for the load balancer IP to be assigned:
+Wait for the load balancer address to be assigned:
 
 ```bash
 export VM_SSH_ADDR=$(kubectl get svc rhel9-ssh-lb -n curl -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+```
+
+If the load balancer provides a hostname instead of an IP (e.g. on AWS), use the hostname:
+
+```bash
+export VM_SSH_ADDR=$(kubectl get svc rhel9-ssh-lb -n curl -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 ```
 
 ## Step 4: Verify SSH connectivity
