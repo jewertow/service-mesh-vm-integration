@@ -398,7 +398,8 @@ ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo systemctl status istio-proxy"
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "cat /var/log/istio/istio.log"
 ```
 
-> **Note:** A successful startup should also be visible in the east-west gateway logs. You should see entries like:
+> [!Note]
+> A successful startup should also be visible in the east-west gateway logs. You should see entries like:
 > ```
 > [2026-09-09T16:23:41.927Z] "- - -" 0 - - - "-" 52316 135070 687977 - "-" "-" "-" "-" "10.131.0.36:15012" outbound|15012||istiod.istio-system.svc.cluster.local 10.128.2.22:53452 10.128.2.22:15012 100.64.0.2:43315 istiod.istio-system.svc -
 > ```
