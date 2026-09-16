@@ -55,17 +55,14 @@ spec:
   values:
     meshConfig:
       accessLogFile: /dev/stdout
+      discoverySelectors:
+      - matchLabels:
+          istio-discovery: enabled
       extensionProviders:
       - name: vm-file-logger
         envoyFileAccessLog:
           path: /var/log/istio/access.log
-      discoverySelectors:
-      - matchLabels:
-          istio-discovery: enabled
     global:
-      meshID: mesh1
-      multiCluster:
-        clusterName: cluster1
       network: cluster-network
 EOF
 ```
@@ -219,7 +216,7 @@ kubectl create serviceaccount curl -n curl-external
 Create a `WorkloadGroup` to define the VM identity in the mesh:
 
 ```bash
-cat <<EOF > workloadgroup.yaml
+kubectl apply -f - <<EOF
 apiVersion: networking.istio.io/v1
 kind: WorkloadGroup
 metadata:
@@ -233,10 +230,6 @@ spec:
     serviceAccount: curl
     network: vm-network
 EOF
-```
-
-```bash
-kubectl apply -f workloadgroup.yaml
 ```
 
 ## Step 7: Configure access logging for the VM
@@ -284,7 +277,8 @@ istioctl x workload entry configure \
   --clusterID cluster1 \
   --autoregister \
   --ingressIP "${INGRESS_IP}" \
-  -f workloadgroup.yaml
+  --name curl \
+  --namespace curl-external
 ```
 
 This generates:
