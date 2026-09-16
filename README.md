@@ -7,7 +7,6 @@ Integrate an external virtual machine into the Istio service mesh. The VM runs a
 - OpenShift cluster with OpenShift Service Mesh 3 operator installed
 - `kubectl` and `istioctl` CLI tools installed
 - An external VM or another OpenShift cluster with OpenShift Virtualization installed
-- `virtctl` CLI installed (if using OpenShift Virtualization)
 
 ## Step 1: Install IstioCNI
 
@@ -293,7 +292,8 @@ sed -i '/defaultConfig:/a\  binaryPath: /usr/bin/envoy' "${WORK_DIR}"/mesh.yaml
 
 This guide applies to any external VM workload regardless of how it is provisioned. In this particular test environment, we used KubeVirt running in a separate OpenShift cluster to provision the VM. A sample KubeVirt VM definition with pre-configured yum repos for installing the Istio sidecar proxy is available in [vm.yaml](vm.yaml).
 
-> **Note:** KubeVirt VMs support direct console access via `virtctl ssh`/`virtctl console`, which does not require SSH key setup. However, this lab configures standard SSH access to simulate a real external VM that is not running on OpenShift.
+> [!Note]
+> KubeVirt VMs support direct console access via `virtctl ssh`/`virtctl console`, which does not require SSH key setup. However, this lab configures standard SSH access to simulate a real external VM that is not running on OpenShift.
 
 Generate an SSH key pair for connecting to the VM:
 
