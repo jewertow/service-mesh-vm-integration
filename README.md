@@ -66,6 +66,18 @@ spec:
 EOF
 ```
 
+> [!NOTE]
+> The control plane setting `meshConfig.accessLogFile: /dev/stdout` configures access logging for all proxies in the mesh. This works for containerized workloads where stdout is captured by the container runtime, but on VMs the istio-proxy runs as a systemd service where `/dev/stdout` is a symlink to `/proc/self/fd/1`. When Envoy tries to open this file it logs error for every listener like below:
+>
+> ```
+> 0.0.0.0_8000: unable to open file '/dev/stdout': No such device or address
+> virtualOutbound: unable to open file '/dev/stdout': No such device or address
+> virtualInbound: unable to open file '/dev/stdout': No such device or address
+> ```
+>
+> The `vm-file-logger` can be configured for proxies running in VMs with `Telemetry` API.
+
+
 Verify the control plane is ready:
 
 ```bash
@@ -226,19 +238,7 @@ spec:
 EOF
 ```
 
-## Step 7: Configure access logging for the VM
-
-The control plane setting `meshConfig.accessLogFile: /dev/stdout` configures Envoy access logging for all proxies in the mesh. This works for containerized workloads where stdout is captured by the container runtime, but on VMs the istio-proxy runs as a systemd service where `/dev/stdout` is not available. Without this step, the VM proxy logs errors on every listener:
-
-```
-0.0.0.0_8000: unable to open file '/dev/stdout': No such device or address
-virtualOutbound: unable to open file '/dev/stdout': No such device or address
-virtualInbound: unable to open file '/dev/stdout': No such device or address
-```
-
-A `Telemetry` resource scoped to the VM namespace overrides the legacy `meshConfig.accessLogFile` setting for proxies in that namespace only. In-cluster sidecars and gateways continue using `/dev/stdout` as before.
-
-Create a `Telemetry` resource that directs the VM proxy to write access logs to a local file using the `vm-file-logger` extension provider defined in the Istio control plane configuration:
+## Step 7: Configure access logging for the proxy running in VM
 
 ```bash
 kubectl apply -f - <<EOF
@@ -253,8 +253,6 @@ spec:
     - name: vm-file-logger
 EOF
 ```
-
-> **Note:** The `vm-file-logger` extension provider is defined in the Istio resource (Step 2) under `meshConfig.extensionProviders`. It writes to `/var/log/istio/access.log`, a directory that the `istio-proxy` RPM already creates on the VM. When a `Telemetry` resource with `accessLogging` applies to a proxy, it completely replaces the legacy `meshConfig.accessLogFile` setting for that proxy — the two do not coexist.
 
 ## Step 8: Generate VM configuration files
 
