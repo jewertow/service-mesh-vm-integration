@@ -259,14 +259,19 @@ EOF
 Use `istioctl` to generate the files the VM needs to join the mesh:
 
 ```bash
-WORK_DIR=vm-config
-mkdir -p "${WORK_DIR}"
+export INGRESS_IP=$(kubectl get svc eastwestgateway-istio -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+```
 
-INGRESS_IP=$(kubectl get svc eastwestgateway-istio -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+If the load balancer provides a hostname instead of an IP (e.g. on AWS), use the hostname:
 
+```bash
+export INGRESS_IP=$(kubectl get svc eastwestgateway-istio -n istio-system -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+```
+
+```bash
+mkdir -p curl-vm-config
 istioctl x workload entry configure \
-  -o "${WORK_DIR}" \
-  --clusterID cluster1 \
+  -o curl-vm-config \
   --autoregister \
   --ingressIP "${INGRESS_IP}" \
   --name curl \
@@ -283,7 +288,7 @@ This generates:
 Patch the generated `mesh.yaml` to set the correct Envoy binary path:
 
 ```bash
-sed -i '/defaultConfig:/a\  binaryPath: /usr/bin/envoy' "${WORK_DIR}"/mesh.yaml
+sed -i '/defaultConfig:/a\  binaryPath: /usr/bin/envoy' curl-vm-config/mesh.yaml
 ```
 
 ## (Optional) VM provisioning
@@ -356,7 +361,7 @@ ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo yum-config-manager --add-repo $
 Transfer the generated configuration files to the VM:
 
 ```bash
-scp -i ./ssh/vm-key "${WORK_DIR}"/cluster.env "${WORK_DIR}"/istio-token "${WORK_DIR}"/mesh.yaml "${WORK_DIR}"/root-cert.pem "${WORK_DIR}"/hosts "admin@${VM_SSH_ADDR}":~
+scp -i ./ssh/vm-key curl-vm-config/* "admin@${VM_SSH_ADDR}":~
 ```
 
 Install the root certificate:
@@ -380,13 +385,13 @@ ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo cp cluster.env /var/lib/istio/e
 Set ownership:
 
 ```bash
-ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo mkdir -p /etc/istio/proxy && sudo chown -R istio-proxy /var/lib/istio /etc/certs /etc/istio/proxy /etc/istio/config /var/run/secrets"
+ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo chown -R istio-proxy /var/lib/istio /etc/certs /etc/istio/proxy /etc/istio/config /var/run/secrets"
 ```
 
 Start the Istio agent:
 
 ```bash
-ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo systemctl start istio-proxy"
+ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo systemctl enable --now istio-proxy"
 ```
 
 Verify the agent started successfully:

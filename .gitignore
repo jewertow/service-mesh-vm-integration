@@ -1,4 +1,4 @@
 kubeconfigs
-vm-config
+curl-vm-config
 ssh/
 *.tar.gz
