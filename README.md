@@ -149,10 +149,7 @@ spec:
       mode: PASSTHROUGH
     hosts:
     - istiod.istio-system.svc
-EOF
-```
-```bash
-kubectl apply -f - <<EOF
+---
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
