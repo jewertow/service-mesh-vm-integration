@@ -4,7 +4,7 @@
   become: true
   vars:
     istio_proxy_rpm_url: "{{ lookup('env', 'ISTIO_PROXY_RPM_URL') }}"
-    work_dir: "./curl-vm-config"
+    work_dir: "{{ playbook_dir }}/../curl-vm-config"
 
   tasks:
     # -------------------------------------------------------------------
