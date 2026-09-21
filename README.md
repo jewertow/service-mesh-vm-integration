@@ -304,6 +304,22 @@ This step is optional. If you already have a VM, skip to [Configuring VM](#confi
 
 ## Testing connectivity
 
+### Install curl on the VM
+
+The test below requires `curl`, which is not installed on a minimal VM image:
+
+```bash
+ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo yum install -y --nogpgcheck curl"
+```
+
+> **Prerequisite:** `curl` is provided by the `appstream` repository.
+>
+> If the `appstream` repository is not enabled, add it before installing:
+>
+> ```bash
+> ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo yum-config-manager --add-repo https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/"
+> ```
+
 ### Verify connectivity to httpbin
 
 From the VM, test connectivity to httpbin running in the mesh:

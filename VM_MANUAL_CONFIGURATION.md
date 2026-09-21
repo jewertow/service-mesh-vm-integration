@@ -1,6 +1,12 @@
 # Configuring VM manually
 
-> **Prerequisite:** The VM must have the `baseos` and `appstream` repositories enabled. These provide core dependencies required by the `istio-proxy` RPM.
+> **Prerequisite:** The VM must have the `baseos` repository enabled - it provides core dependencies required by the `istio-proxy` RPM.
+>
+> If the `baseos` repository is not enabled, add it:
+>
+> ```bash
+> ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo yum-config-manager --add-repo https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/"
+> ```
 
 ## Step 1: Install the Istio sidecar
 
@@ -53,11 +59,5 @@ Verify the agent started successfully:
 
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo systemctl status istio-proxy"
-ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "cat /var/log/istio/istio.log"
 ```
 
-> [!Note]
-> A successful startup should also be visible in the east-west gateway logs. You should see entries like:
-> ```
-> [2026-09-09T16:23:41.927Z] "- - -" 0 - - - "-" 52316 135070 687977 - "-" "-" "-" "-" "10.131.0.36:15012" outbound|15012||istiod.istio-system.svc.cluster.local 10.128.2.22:53452 10.128.2.22:15012 100.64.0.2:43315 istiod.istio-system.svc -
-> ```

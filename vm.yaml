@@ -75,14 +75,3 @@ spec:
                 expire: False
               ssh_authorized_keys:
                 - __SSH_PUBLIC_KEY__
-              yum_repos:
-                baseos:
-                  name: CentOS Stream 9 - BaseOS
-                  baseurl: https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/
-                  gpgcheck: false
-                  enabled: true
-                appstream:
-                  name: CentOS Stream 9 - AppStream
-                  baseurl: https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/
-                  gpgcheck: false
-                  enabled: true
