@@ -7,9 +7,16 @@
     work_dir: "{{ playbook_dir }}/../curl-vm-config"
 
   tasks:
-    # -------------------------------------------------------------------
-    # 1. Package Installation
-    # -------------------------------------------------------------------
+    - name: Configure the BaseOS repository providing istio-proxy dependencies
+      ansible.builtin.yum_repository:
+        name: baseos
+        description: CentOS Stream 9 BaseOS
+        baseurl: https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/
+        gpgcheck: yes
+        gpgkey: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
+        enabled: yes
+        state: present
+
     - name: Add Istio proxy repository
       ansible.builtin.yum_repository:
         name: istio-proxy
@@ -23,25 +30,15 @@
         name: istio-proxy.x86_64
         state: present
 
-    # -------------------------------------------------------------------
-    # 2. Directory Creation
-    # -------------------------------------------------------------------
+    # This is a workaround - the tokens directory should be managed by the RPM
     - name: Create required directories
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
         mode: '0755'
       loop:
-        - /etc/certs
-        - /var/run/secrets/tokens
-        - /var/lib/istio/envoy
-        - /etc/istio/config
-        - /etc/istio/proxy
-        - /var/log/istio
+      - /var/run/secrets/tokens
 
-    # -------------------------------------------------------------------
-    # 3. Transfer Configuration Files
-    # -------------------------------------------------------------------
     - name: Deploy Root Certificate
       ansible.builtin.copy:
         src: "{{ work_dir }}/root-cert.pem"
@@ -66,33 +63,20 @@
         dest: /etc/istio/config/mesh
         mode: '0644'
 
-    # -------------------------------------------------------------------
-    # 4. Host File Modification
-    # -------------------------------------------------------------------
     - name: Append generated hosts configuration to /etc/hosts
       ansible.builtin.blockinfile:
         path: /etc/hosts
         block: "{{ lookup('file', work_dir + '/hosts') }}"
         marker: "# {mark} ANSIBLE MANAGED ISTIO HOSTS"
 
-    # -------------------------------------------------------------------
-    # 5. Set Permissions & Ownership
-    # -------------------------------------------------------------------
     - name: Set ownership for Istio directories and files
       ansible.builtin.file:
         path: "{{ item }}"
         owner: istio-proxy
         recurse: true
       loop:
-        - /var/lib/istio
-        - /etc/certs
-        - /etc/istio/proxy
-        - /etc/istio/config
-        - /var/run/secrets
+      - /var/run/secrets
 
-    # -------------------------------------------------------------------
-    # 6. Service Lifecycle Management
-    # -------------------------------------------------------------------
     - name: Enable and start istio-proxy service
       ansible.builtin.systemd:
         name: istio-proxy
