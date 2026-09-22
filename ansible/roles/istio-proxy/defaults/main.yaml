@@ -1,0 +1,2 @@
+---
+istio_proxy_rpm_url: "{{ lookup('env', 'ISTIO_PROXY_RPM_URL') }}"
