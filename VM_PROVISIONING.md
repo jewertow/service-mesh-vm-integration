@@ -1,6 +1,6 @@
 # VM Provisioning with KubeVirt
 
-This guide applies to any external VM workload regardless of how it is provisioned. In this particular test environment, we used KubeVirt running in a separate OpenShift cluster to provision the VM. A sample KubeVirt VM definition with pre-configured yum repos for installing the Istio sidecar proxy is available in [vm.yaml](vm.yaml).
+This guide applies to any external VM workload regardless of how it is provisioned. In this particular test environment, we used KubeVirt running in a separate OpenShift cluster to provision the VM. A sample KubeVirt VM definition with pre-configured yum repos — `baseos`, `appstream` and Docker CE, which is what the ztunnel container needs — is available in [vm.yaml](vm.yaml).
 
 > [!Note]
 > KubeVirt VMs support direct console access via `virtctl ssh`/`virtctl console`, which does not require SSH key setup. However, this lab configures standard SSH access to simulate a real external VM that is not running on OpenShift.
@@ -19,8 +19,8 @@ ssh-keygen -t ed25519 -C "test@example.com" -f ./ssh/vm-key -N ""
 Create the VM, injecting the public key into cloud-init:
 
 ```bash
-kubectl create ns curl
-sed "s|__SSH_PUBLIC_KEY__|$(cat ssh/vm-key.pub)|" vm.yaml | kubectl apply -n curl -f -
+kubectl create ns ztunnel-vm
+sed "s|__SSH_PUBLIC_KEY__|$(cat ssh/vm-key.pub)|" vm.yaml | kubectl apply -n ztunnel-vm -f -
 ```
 
 ## Step 3: Expose the VM with a LoadBalancer service
@@ -33,7 +33,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: rhel9-ssh-lb
-  namespace: curl
+  namespace: ztunnel-vm
 spec:
   type: LoadBalancer
   ports:
@@ -42,20 +42,20 @@ spec:
     targetPort: 22
     protocol: TCP
   selector:
-    vm: curl
+    vm: ztunnel
 EOF
 ```
 
 Wait for the load balancer address to be assigned:
 
 ```bash
-export VM_SSH_ADDR=$(kubectl get svc rhel9-ssh-lb -n curl -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+export VM_SSH_ADDR=$(kubectl get svc rhel9-ssh-lb -n ztunnel-vm -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 ```
 
 If the load balancer provides a hostname instead of an IP (e.g. on AWS), use the hostname:
 
 ```bash
-export VM_SSH_ADDR=$(kubectl get svc rhel9-ssh-lb -n curl -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+export VM_SSH_ADDR=$(kubectl get svc rhel9-ssh-lb -n ztunnel-vm -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 ```
 
 ## Step 4: Verify SSH connectivity
@@ -63,3 +63,15 @@ export VM_SSH_ADDR=$(kubectl get svc rhel9-ssh-lb -n curl -o jsonpath='{.status.
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" hostname
 ```
+
+## Step 5: Read the VM's own address
+
+`VM_IP` is needed for the `WorkloadEntry` and for ztunnel's XDS node ID. With the masquerade networking used in [vm.yaml](vm.yaml) this is `10.0.2.2`:
+
+```bash
+export VM_IP=$(ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "ip -4 -o addr show scope global | awk '{print \$4}' | cut -d/ -f1 | head -1")
+echo "${VM_IP}"
+```
+
+> [!Note]
+> With masquerade networking this address is private to the VM and is **not** routable from the mesh cluster. That is fine for this lab, which only establishes the ztunnel-to-istiod connection, but it does mean the cluster cannot dial the VM's HBONE port. See [Beyond this lab](README.md#beyond-this-lab).

@@ -1,4 +1,4 @@
 kubeconfigs
-curl-vm-config
+ztunnel-vm-config
 ssh/
 *.tar.gz

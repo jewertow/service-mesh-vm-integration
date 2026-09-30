@@ -1,15 +1,15 @@
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
-  name: rhel-istio-proxy
+  name: rhel-ztunnel
   labels:
-    app: rhel-istio-proxy
+    app: rhel-ztunnel
 spec:
   dataVolumeTemplates:
     - apiVersion: cdi.kubevirt.io/v1beta1
       kind: DataVolume
       metadata:
-        name: rhel-istio-proxy-rootdisk
+        name: rhel-ztunnel-rootdisk
       spec:
         sourceRef:
           kind: DataSource
@@ -29,8 +29,8 @@ spec:
       labels:
         kubevirt.io/size: small
         # label used by `virtctl expose`
-        # vmi.kubevirt.io/id: rhel-istio-proxy
-        vm: curl
+        # vmi.kubevirt.io/id: rhel-ztunnel
+        vm: ztunnel
     spec:
       architecture: amd64
       domain:
@@ -64,7 +64,7 @@ spec:
       volumes:
         - name: rootdisk
           dataVolume:
-            name: rhel-istio-proxy-rootdisk
+            name: rhel-ztunnel-rootdisk
         - name: cloudinitdisk
           cloudInitNoCloud:
             userData: |
@@ -84,5 +84,10 @@ spec:
                 appstream:
                   name: CentOS Stream 9 - AppStream
                   baseurl: https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/
+                  gpgcheck: false
+                  enabled: true
+                docker-ce-stable:
+                  name: Docker CE Stable
+                  baseurl: https://download.docker.com/linux/centos/9/x86_64/stable
                   gpgcheck: false
                   enabled: true

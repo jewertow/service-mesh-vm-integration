@@ -1,100 +1,137 @@
 ---
-- name: Deploy Istio Proxy to External VM
+- name: Deploy ztunnel to an external VM
   hosts: istio_vms
   become: true
   vars:
-    istio_proxy_rpm_url: "{{ lookup('env', 'ISTIO_PROXY_RPM_URL') }}"
-    work_dir: "{{ playbook_dir }}/../curl-vm-config"
+    work_dir: "{{ playbook_dir }}/../ztunnel-vm-config"
+    ztunnel_image: "{{ lookup('env', 'ZTUNNEL_IMAGE') }}"
+    ew_gateway_addr: "{{ lookup('env', 'EW_GATEWAY_ADDR') }}"
+    vm_ip: "{{ lookup('env', 'VM_IP') }}"
+    ztunnel_namespace: external-vm
+    ztunnel_workload_name: vm-1
+    ztunnel_service_account: vm
+    ztunnel_cluster_id: Kubernetes
+    ztunnel_network: vm-network
 
   tasks:
-    # -------------------------------------------------------------------
-    # 1. Package Installation
-    # -------------------------------------------------------------------
-    - name: Add Istio proxy repository
-      ansible.builtin.yum_repository:
-        name: istio-proxy
-        description: Istio Proxy Repository
-        baseurl: "{{ istio_proxy_rpm_url }}"
-        gpgcheck: false
-        sslverify: false
+    - name: Fail fast on missing environment variables
+      ansible.builtin.assert:
+        that:
+          - ztunnel_image | length > 0
+          - ew_gateway_addr | length > 0
+          - vm_ip | length > 0
+        fail_msg: >-
+          ZTUNNEL_IMAGE, EW_GATEWAY_ADDR and VM_IP must be exported before running
+          this playbook. See README.md.
 
-    - name: Install istio-proxy package
-      ansible.builtin.package:
-        name: istio-proxy.x86_64
+    # -------------------------------------------------------------------
+    # 1. Docker Installation
+    # -------------------------------------------------------------------
+    - name: Add Docker CE repository
+      ansible.builtin.yum_repository:
+        name: docker-ce-stable
+        description: Docker CE Stable
+        baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+        gpgcheck: false
+
+    # containerd.io conflicts with the runc that ships with podman, hence allowerasing.
+    - name: Install Docker packages
+      ansible.builtin.dnf:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+        disable_gpg_check: true
+        allowerasing: true
+
+    # Required by the community.docker modules used below. Not packaged in
+    # baseos/appstream, so it comes from pip.
+    - name: Install pip
+      ansible.builtin.dnf:
+        name: python3-pip
         state: present
 
-    # -------------------------------------------------------------------
-    # 2. Directory Creation
-    # -------------------------------------------------------------------
-    - name: Create required directories
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0755'
-      loop:
-        - /etc/certs
-        - /var/run/secrets/tokens
-        - /var/lib/istio/envoy
-        - /etc/istio/config
-        - /etc/istio/proxy
-        - /var/log/istio
+    - name: Install the Docker SDK for Python
+      ansible.builtin.pip:
+        name: docker
+        state: present
 
-    # -------------------------------------------------------------------
-    # 3. Transfer Configuration Files
-    # -------------------------------------------------------------------
-    - name: Deploy Root Certificate
-      ansible.builtin.copy:
-        src: "{{ work_dir }}/root-cert.pem"
-        dest: /etc/certs/root-cert.pem
-        mode: '0644'
-
-    - name: Deploy Istio Token
-      ansible.builtin.copy:
-        src: "{{ work_dir }}/istio-token"
-        dest: /var/run/secrets/tokens/istio-token
-        mode: '0600'
-
-    - name: Deploy cluster.env configuration
-      ansible.builtin.copy:
-        src: "{{ work_dir }}/cluster.env"
-        dest: /var/lib/istio/envoy/cluster.env
-        mode: '0644'
-
-    - name: Deploy mesh.yaml configuration
-      ansible.builtin.copy:
-        src: "{{ work_dir }}/mesh.yaml"
-        dest: /etc/istio/config/mesh
-        mode: '0644'
-
-    # -------------------------------------------------------------------
-    # 4. Host File Modification
-    # -------------------------------------------------------------------
-    - name: Append generated hosts configuration to /etc/hosts
-      ansible.builtin.blockinfile:
-        path: /etc/hosts
-        block: "{{ lookup('file', work_dir + '/hosts') }}"
-        marker: "# {mark} ANSIBLE MANAGED ISTIO HOSTS"
-
-    # -------------------------------------------------------------------
-    # 5. Set Permissions & Ownership
-    # -------------------------------------------------------------------
-    - name: Set ownership for Istio directories and files
-      ansible.builtin.file:
-        path: "{{ item }}"
-        owner: istio-proxy
-        recurse: true
-      loop:
-        - /var/lib/istio
-        - /etc/certs
-        - /etc/istio/proxy
-        - /etc/istio/config
-        - /var/run/secrets
-
-    # -------------------------------------------------------------------
-    # 6. Service Lifecycle Management
-    # -------------------------------------------------------------------
-    - name: Enable and start istio-proxy service
+    - name: Enable and start the Docker daemon
       ansible.builtin.systemd:
-        name: istio-proxy
+        name: docker
         state: started
         enabled: true
+
+    # -------------------------------------------------------------------
+    # 2. Transfer Configuration Files
+    # -------------------------------------------------------------------
+    - name: Create the ztunnel configuration directory
+      ansible.builtin.file:
+        path: /etc/ztunnel
+        state: directory
+        mode: '0755'
+
+    - name: Deploy root certificate
+      ansible.builtin.copy:
+        src: "{{ work_dir }}/root-cert.pem"
+        dest: /etc/ztunnel/root-cert.pem
+        mode: '0644'
+
+    # ztunnel re-reads this file on every request, so replacing it is enough to
+    # rotate the token; the container does not need restarting.
+    - name: Deploy service account token
+      ansible.builtin.copy:
+        src: "{{ work_dir }}/istio-token"
+        dest: /etc/ztunnel/istio-token
+        mode: '0600'
+
+    # -------------------------------------------------------------------
+    # 3. Run ztunnel
+    # -------------------------------------------------------------------
+    - name: Run the ztunnel container
+      community.docker.docker_container:
+        name: ztunnel
+        image: "{{ ztunnel_image }}"
+        pull: true
+        state: started
+        restart_policy: always
+        network_mode: host
+        capabilities:
+          - NET_ADMIN
+          - NET_RAW
+        # The east-west gateway routes by SNI, so ztunnel must dial istiod by name.
+        etc_hosts:
+          istiod.istio-system.svc: "{{ ew_gateway_addr }}"
+        # Mount the directory rather than the files so in-place token rotation is
+        # visible. Z applies the SELinux label the container needs on RHEL.
+        volumes:
+          - /etc/ztunnel:/etc/ztunnel:ro,Z
+        env:
+          PROXY_MODE: dedicated
+          PROXY_WORKLOAD_INFO: "{{ ztunnel_namespace }}/{{ ztunnel_workload_name }}/{{ ztunnel_service_account }}"
+          XDS_ADDRESS: https://istiod.istio-system.svc:15012
+          CA_ADDRESS: https://istiod.istio-system.svc:15012
+          XDS_ROOT_CA: /etc/ztunnel/root-cert.pem
+          CA_ROOT_CA: /etc/ztunnel/root-cert.pem
+          AUTH_TOKEN: /etc/ztunnel/istio-token
+          CLUSTER_ID: "{{ ztunnel_cluster_id }}"
+          NETWORK: "{{ ztunnel_network }}"
+          POD_NAMESPACE: "{{ ztunnel_namespace }}"
+          POD_NAME: "{{ ztunnel_workload_name }}"
+          INSTANCE_IP: "{{ vm_ip }}"
+          RUST_LOG: info
+        # NODE_NAME is deliberately unset: a WorkloadEntry has no node, and ztunnel
+        # only indexes node-local workloads by identity unless NODE_NAME is absent.
+
+    # -------------------------------------------------------------------
+    # 4. Verification
+    # -------------------------------------------------------------------
+    - name: Wait for ztunnel to become ready
+      ansible.builtin.uri:
+        url: http://127.0.0.1:15021/healthz/ready
+        status_code: 200
+      register: ztunnel_ready
+      retries: 30
+      delay: 2
+      until: ztunnel_ready is succeeded
