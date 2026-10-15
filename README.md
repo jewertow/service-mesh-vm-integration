@@ -1,12 +1,13 @@
 # Integrating an External VM with Istio on OpenShift
 
-Integrate an external virtual machine into the Istio service mesh. The VM runs an Istio sidecar proxy, reaches the control plane through OpenShift passthrough Routes, and reaches in-mesh workloads through an east-west gateway. This lab uses KubeVirt to provision the VM in a dedicated OpenShift cluster, but the mesh is agnostic to how the VM is provisioned.
+Integrate an external virtual machine into the Istio service mesh. The VM runs an Istio sidecar proxy, reaches the control plane through an OpenShift passthrough Route, and reaches in-mesh workloads through an east-west gateway. This lab uses KubeVirt to provision the VM in a dedicated OpenShift cluster, but the mesh is agnostic to how the VM is provisioned.
 
 ## Prerequisites
 
 - OpenShift cluster with OpenShift Service Mesh 3 operator installed
 - `kubectl` and `istioctl` CLI tools installed
 - An external VM or another OpenShift cluster with OpenShift Virtualization installed
+- The VM can resolve and reach names under the cluster's ingress domain (see [Step 2](#step-2-export-the-cluster-base-domain))
 
 ## Mesh setup
 
@@ -35,12 +36,30 @@ kubectl get istiocni default
 
 ### Step 2: Export the cluster base domain
 
-The control plane is exposed to the VM through OpenShift Routes, so the cluster's default ingress domain is needed in several of the following steps:
+The control plane is exposed to the VM through an OpenShift Route, so the cluster's default ingress domain is needed in several of the following steps:
 
 ```bash
 export BASE_DOMAIN=$(kubectl get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
 echo "Base domain: ${BASE_DOMAIN}"
 ```
+
+> [!IMPORTANT]
+> This setup assumes the VM's DNS resolver can resolve names under the cluster's base domain, and that the resolved address is reachable from the VM.
+> That normally holds without any extra work: the OpenShift ingress domain is backed by a wildcard `*.${BASE_DOMAIN}` record in public DNS pointing at the router's load balancer.
+>
+> This assumption is what removes the need to manage `/etc/hosts` on the VM.
+> The usual VM integration pins the in-cluster name `istiod.istio-system.svc` to the gateway's IP with a generated `hosts` file,
+> because that name does not exist in any DNS the VM can query. Here the VM reaches istiod under a name that does resolve,
+> so there is nothing to pin and nothing to re-pin when the gateway address changes.
+>
+> Once the VM exists, confirm it before configuring the proxy:
+>
+> ```bash
+> ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "getent hosts istiod.istio-system.svc.${BASE_DOMAIN}"
+> ```
+>
+> If this returns nothing, the VM is on a private resolver that does not forward to public DNS. Point it at a resolver that does,
+> or add a single `/etc/hosts` entry mapping the Route hostname to the router's address.
 
 ### Step 3: Install Istio control plane
 
@@ -76,16 +95,19 @@ spec:
       network: cluster-network
     pilot:
       env:
-        ISTIOD_CUSTOM_HOST: istiod.istio-system.svc.${BASE_DOMAIN},istiod-webhook.istio-system.svc.${BASE_DOMAIN}
+        ISTIOD_CUSTOM_HOST: istiod.istio-system.svc.${BASE_DOMAIN}
 EOF
 ```
 
-> [!IMPORTANT]
-> `ISTIOD_CUSTOM_HOST` adds the Route hostnames to the SAN list of the certificate istiod serves on ports 15012 and 15017. It only adds to the defaults, so the in-cluster names (`istiod.istio-system.svc`) keep working for the injection and validation webhooks.
->
-> This is required because the VM proxy uses the host part of its discovery address as both the TLS SNI and the name it verifies istiod's certificate against. The SNI has to be the Route hostname for the OpenShift router to pick the right Route, so that same hostname must also be present in istiod's certificate.
-
 > [!NOTE]
+> `ISTIOD_CUSTOM_HOST` adds the Route hostname to the SAN list of the certificate istiod serves on port 15012.
+> It only adds to the defaults, so the in-cluster names (`istiod.istio-system.svc`) keep working for the injection and validation webhooks.
+>
+> This is required because the VM proxy uses the host part of its discovery address as both the TLS SNI and the name it
+> verifies istiod's certificate against. The SNI has to be the Route hostname for the OpenShift router to pick the right Route,
+> so that same hostname must also be present in istiod's certificate.
+
+> [!IMPORTANT]
 > The control plane setting `meshConfig.accessLogFile: /dev/stdout` configures access logging for all proxies in the mesh. This works for containerized workloads where stdout is captured by the container runtime, but on VMs the istio-proxy runs as a systemd service where `/dev/stdout` is a symlink to `/proc/self/fd/1`. When Envoy tries to open this file it logs error for every listener like below:
 >
 > ```
@@ -138,7 +160,11 @@ kubectl get gateway eastwestgateway -n istio-system
 
 ### Step 5: Expose the control plane to the VM
 
-Expose istiod with OpenShift passthrough Routes instead of routing control plane traffic through the east-west gateway. The OpenShift router listens on port 443 and selects the backend by SNI, so each istiod port needs its own hostname:
+Expose istiod with an OpenShift passthrough Route instead of routing control plane traffic through the east-west gateway.
+The reason for preferring a Route here is DNS: a Route publishes istiod under a real hostname in the cluster's ingress domain,
+which the VM can resolve on its own (see [Step 2](#step-2-export-the-cluster-base-domain)). The gateway only offers a load balancer address,
+which the VM has to map to the in-cluster name `istiod.istio-system.svc` through a generated `/etc/hosts` entry,
+which needs to be updated if the IP changes.
 
 ```bash
 kubectl apply -f - <<EOF
@@ -158,27 +184,10 @@ spec:
   tls:
     termination: passthrough
     insecureEdgeTerminationPolicy: None
----
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: istiod-15017
-  namespace: istio-system
-spec:
-  host: istiod-webhook.istio-system.svc.${BASE_DOMAIN}
-  to:
-    kind: Service
-    name: istiod
-    weight: 100
-  port:
-    targetPort: 15017
-  tls:
-    termination: passthrough
-    insecureEdgeTerminationPolicy: None
 EOF
 ```
 
-Verify the routes were created with the evaluated hostnames:
+Verify the route was created with the evaluated hostname:
 
 ```bash
 kubectl get routes -n istio-system
@@ -187,12 +196,11 @@ kubectl get routes -n istio-system
 Expected output:
 
 ```
-NAME           HOST/PORT                                            PATH   SERVICES   PORT    TERMINATION   WILDCARD
-istiod-15012   istiod.istio-system.svc.${BASE_DOMAIN}                      istiod     15012   passthrough   None
-istiod-15017   istiod-webhook.istio-system.svc.${BASE_DOMAIN}              istiod     15017   passthrough   None
+NAME           HOST/PORT                                PATH   SERVICES   PORT    TERMINATION   WILDCARD
+istiod-15012   istiod.istio-system.svc.${BASE_DOMAIN}          istiod     15012   passthrough   None
 ```
 
-Because the Routes are passthrough, the TLS session terminates at istiod itself. Extract the Istio root CA and confirm from outside the cluster that istiod answers on port 443 with a certificate valid for the Route hostname:
+Because the Route is passthrough, the TLS session terminates at istiod itself. Extract the Istio root CA and confirm from outside the cluster that istiod answers on port 443 with a certificate valid for the Route hostname:
 
 ```bash
 kubectl get configmap istio-ca-root-cert -n istio-system -o jsonpath='{.data.root-cert\.pem}' > istio-ca.crt
@@ -210,7 +218,7 @@ Expected output:
 Verify return code: 0 (ok)
 ```
 
-A verification failure here means `ISTIOD_CUSTOM_HOST` is not set correctly — check that the Route hostnames in Step 3 match the ones created above.
+A verification failure here means `ISTIOD_CUSTOM_HOST` is not set correctly - check that the hostname in Step 3 matches the Route created above.
 
 ### Step 6: Deploy httpbin
 
