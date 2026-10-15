@@ -40,7 +40,7 @@ ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo mkdir -p /var/run/secrets/token
 ## Step 5: Deploy configuration files
 
 ```bash
-ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo cp cluster.env /var/lib/istio/envoy/cluster.env && sudo cp mesh.yaml /etc/istio/config/mesh && sudo sh -c 'cat hosts >> /etc/hosts'"
+ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo cp cluster.env /var/lib/istio/envoy/cluster.env && sudo cp mesh.yaml /etc/istio/config/mesh"
 ```
 
 ## Step 6: Set ownership

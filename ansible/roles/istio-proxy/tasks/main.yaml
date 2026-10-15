@@ -55,12 +55,6 @@
     dest: /etc/istio/config/mesh
     mode: '0644'
 
-- name: Append generated hosts configuration to /etc/hosts
-  ansible.builtin.blockinfile:
-    path: /etc/hosts
-    block: "{{ lookup('file', istio_proxy_config_dir + '/hosts') }}"
-    marker: "# {mark} ANSIBLE MANAGED ISTIO HOSTS"
-
 # This is a workaround - the secrets directory should be managed by the RPM
 - name: Set ownership for Istio directories and files
   ansible.builtin.file:
