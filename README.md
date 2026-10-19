@@ -354,16 +354,10 @@ This step is optional. If you already have a VM, skip to [Configuring VM](#confi
 The test below requires `curl`, which is not installed on a minimal VM image:
 
 ```bash
-ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo yum install -y --nogpgcheck curl"
+ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo dnf install -y curl"
 ```
 
-> **Prerequisite:** `curl` is provided by the `appstream` repository.
->
-> If the `appstream` repository is not enabled, add it before installing:
->
-> ```bash
-> ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo yum-config-manager --add-repo https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/"
-> ```
+> **Prerequisite:** `curl` is provided by the `appstream` repository, which is enabled by default on a VM registered with Red Hat Subscription Management.
 
 ### Verify connectivity to httpbin
 

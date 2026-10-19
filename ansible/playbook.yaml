@@ -9,16 +9,6 @@
       istio_proxy_config_dir: "{{ playbook_dir }}/../curl-vm-config"
 
   tasks:
-  - name: Configure the AppStream repository
-    ansible.builtin.yum_repository:
-      name: appstream
-      description: CentOS Stream 9 AppStream
-      baseurl: https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/
-      gpgcheck: yes
-      gpgkey: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
-      enabled: yes
-      state: present
-
   - name: Install curl
     ansible.builtin.package:
       name: curl

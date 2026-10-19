@@ -1,20 +1,32 @@
 # Configuring VM manually
 
-> **Prerequisite:** The VM must have the `baseos` repository enabled - it provides core dependencies required by the `istio-proxy` RPM.
+> **Prerequisite:** The VM must be registered with Red Hat Subscription Management - it provides the repository with the `istio-proxy` RPM and the repositories with its dependencies.
 >
-> If the `baseos` repository is not enabled, add it:
+> If the VM is not registered yet, export your credentials:
 >
 > ```bash
-> ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo yum-config-manager --add-repo https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/"
+> export RHSM_USERNAME=<your-username>
+> export RHSM_PASSWORD=<your-password>
+> ```
+>
+> and register it:
+>
+> ```bash
+> ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo subscription-manager register --username ${RHSM_USERNAME} --password ${RHSM_PASSWORD}"
 > ```
 
 ## Step 1: Install the Istio sidecar
 
+Enable the OpenShift Service Mesh repository:
+
 ```bash
-export ISTIO_PROXY_RPM_URL=<your-repo-url>
+ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo subscription-manager repos --enable ossm-3-for-rhel-9-x86_64-rpms"
 ```
+
+Install the `istio-proxy` package:
+
 ```bash
-ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo yum-config-manager --add-repo ${ISTIO_PROXY_RPM_URL} && sudo yum install -y --nogpgcheck --setopt=sslverify=0 istio-proxy.x86_64"
+ssh -i ./ssh/vm-key "admin@${VM_SSH_ADDR}" "sudo dnf install -y istio-proxy"
 ```
 
 ## Step 2: Transfer configuration files

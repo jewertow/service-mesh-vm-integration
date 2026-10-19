@@ -1,2 +1,5 @@
 ---
-istio_proxy_rpm_url: "{{ lookup('env', 'ISTIO_PROXY_RPM_URL') }}"
+istio_proxy_repo: ossm-3-for-rhel-9-x86_64-rpms
+# Optional - used only if the VM is not registered with Red Hat Subscription Management yet
+istio_proxy_rhsm_username: "{{ lookup('env', 'RHSM_USERNAME') }}"
+istio_proxy_rhsm_password: "{{ lookup('env', 'RHSM_PASSWORD') }}"

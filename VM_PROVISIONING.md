@@ -1,6 +1,6 @@
 # VM Provisioning with KubeVirt
 
-This guide applies to any external VM workload regardless of how it is provisioned. In this particular test environment, we used KubeVirt running in a separate OpenShift cluster to provision the VM. A sample KubeVirt VM definition with pre-configured yum repos for installing the Istio sidecar proxy is available in [vm.yaml](vm.yaml).
+This guide applies to any external VM workload regardless of how it is provisioned. In this particular test environment, we used KubeVirt running in a separate OpenShift cluster to provision the VM. A sample KubeVirt VM definition is available in [vm.yaml](vm.yaml).
 
 > [!Note]
 > KubeVirt VMs support direct console access via `virtctl ssh`/`virtctl console`, which does not require SSH key setup. However, this lab configures standard SSH access to simulate a real external VM that is not running on OpenShift.

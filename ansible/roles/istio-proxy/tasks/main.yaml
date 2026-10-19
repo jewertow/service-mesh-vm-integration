@@ -1,25 +1,32 @@
 ---
-- name: Configure the BaseOS repository providing istio-proxy dependencies
-  ansible.builtin.yum_repository:
-    name: baseos
-    description: CentOS Stream 9 BaseOS
-    baseurl: https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/
-    gpgcheck: yes
-    gpgkey: https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official
-    enabled: yes
-    state: present
+- name: Check the subscription-manager registration status
+  ansible.builtin.command: subscription-manager identity
+  register: istio_proxy_rhsm_identity
+  changed_when: false
+  failed_when: false
 
-- name: Add Istio proxy repository
-  ansible.builtin.yum_repository:
-    name: istio-proxy
-    description: Istio Proxy Repository
-    baseurl: "{{ istio_proxy_rpm_url }}"
-    gpgcheck: false
-    sslverify: false
+- name: Register the system with Red Hat Subscription Management
+  ansible.builtin.command: >
+    subscription-manager register
+    --username {{ istio_proxy_rhsm_username }}
+    --password {{ istio_proxy_rhsm_password }}
+  when:
+  - istio_proxy_rhsm_identity.rc != 0
+  - istio_proxy_rhsm_username | length > 0
+  no_log: true
+
+- name: List the enabled subscription-manager repositories
+  ansible.builtin.command: subscription-manager repos --list-enabled
+  register: istio_proxy_enabled_repos
+  changed_when: false
+
+- name: Enable the repository providing the istio-proxy package
+  ansible.builtin.command: subscription-manager repos --enable {{ istio_proxy_repo }}
+  when: istio_proxy_repo not in istio_proxy_enabled_repos.stdout
 
 - name: Install istio-proxy package
   ansible.builtin.package:
-    name: istio-proxy.x86_64
+    name: istio-proxy
     state: present
 
 # This is a workaround - the secrets directory should be managed by the RPM
