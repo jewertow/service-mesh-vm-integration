@@ -95,7 +95,13 @@ Install podman:
 ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo dnf install -y podman"
 ```
 
-Create a Quadlet unit so systemd manages the container. It uses the same image and the same port (`8080`) as the container in `samples/httpbin/httpbin.yaml` from the Istio repository, which the mesh publishes on port `8000`:
+Create a Quadlet unit so systemd manages the container. It uses the same image and the same port (`8080`) as the container in `samples/httpbin/httpbin.yaml` from the Istio repository, which the mesh publishes on port `8000`.
+
+The podman package does not ship the Quadlet drop-in directory, so create it first:
+
+```bash
+ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo mkdir -p /etc/containers/systemd"
+```
 
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo tee /etc/containers/systemd/httpbin.container > /dev/null" <<'EOF'
@@ -106,7 +112,7 @@ Wants=network-online.target
 
 [Container]
 Image=docker.io/mccutchen/go-httpbin:v2.15.0
-Exec=-port 8080
+Exec=/bin/go-httpbin -port 8080
 Network=host
 
 [Service]
@@ -131,19 +137,16 @@ ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo systemctl daemon-reload && sudo sys
 
 > [!NOTE]
 > Quadlet units are generated, so they cannot be enabled with `systemctl enable`. The `[Install]` section in the `.container` file is what makes the service start on boot.
+>
+> `Exec=` replaces the image's `CMD` instead of appending to it, and the go-httpbin image declares no `ENTRYPOINT`, so the binary has to be named explicitly. Dropping `/bin/go-httpbin` leaves podman trying to exec `-port`, and the service fails on startup and is restarted until systemd gives up:
+>
+> ```
+> httpbin.service: Failed with result 'exit-code'.
+> httpbin.service: Start request repeated too quickly.
+> ```
 
 Verify httpbin answers locally:
 
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "curl -s localhost:8080/status/200 -o /dev/null -w '%{http_code}\n'"
 ```
-
-## Step 9: Install curl
-
-The connectivity tests run from the VM require `curl`, which is not installed on a minimal VM image:
-
-```bash
-ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo dnf install -y curl"
-```
-
-> **Prerequisite:** `curl` is provided by the `appstream` repository, which is enabled by default on a VM registered with Red Hat Subscription Management.

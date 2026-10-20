@@ -4,6 +4,13 @@
     name: podman
     state: present
 
+# The podman package does not ship this directory
+- name: Create the Quadlet drop-in directory
+  ansible.builtin.file:
+    path: /etc/containers/systemd
+    state: directory
+    mode: '0755'
+
 - name: Deploy the httpbin Quadlet unit
   ansible.builtin.template:
     src: httpbin.container.j2

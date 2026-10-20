@@ -6,7 +6,8 @@ Wants=network-online.target
 
 [Container]
 Image={{ httpbin_image }}
-Exec=-port {{ httpbin_port }}
+# Exec replaces the image CMD, so the binary has to be named explicitly
+Exec=/bin/go-httpbin -port {{ httpbin_port }}
 # The container shares the host network namespace instead of publishing the port.
 # Published ports would be DNATed by podman from nat/PREROUTING, and podman inserts
 # its jump at the head of the chain, ahead of the ISTIO_INBOUND jump appended by

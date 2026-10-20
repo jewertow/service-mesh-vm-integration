@@ -8,9 +8,3 @@
   # with its own generated configuration.
   - role: istio-proxy
   - role: httpbin
-
-  tasks:
-  - name: Install curl
-    ansible.builtin.package:
-      name: curl
-      state: present
