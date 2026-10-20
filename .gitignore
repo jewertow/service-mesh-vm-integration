@@ -1,4 +1,6 @@
 kubeconfigs
-curl-vm-config
+*-vm-config
+ansible/inventory.yaml
+istio-ca.crt
 ssh/
 *.tar.gz

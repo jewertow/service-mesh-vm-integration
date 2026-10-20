@@ -1,15 +1,15 @@
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
-  name: rhel-istio-proxy
+  name: __VM_NAME__
   labels:
-    app: rhel-istio-proxy
+    app: __VM_NAME__
 spec:
   dataVolumeTemplates:
     - apiVersion: cdi.kubevirt.io/v1beta1
       kind: DataVolume
       metadata:
-        name: rhel-istio-proxy-rootdisk
+        name: __VM_NAME__-rootdisk
       spec:
         sourceRef:
           kind: DataSource
@@ -28,9 +28,8 @@ spec:
         vm.kubevirt.io/workload: server
       labels:
         kubevirt.io/size: small
-        # label used by `virtctl expose`
-        # vmi.kubevirt.io/id: rhel-istio-proxy
-        vm: curl
+        # label used by the LoadBalancer service exposing the VM
+        vm: __VM_NAME__
     spec:
       architecture: amd64
       domain:
@@ -46,8 +45,12 @@ spec:
             - name: default
               masquerade: {}
               model: virtio
+              # With masquerade networking only the listed ports are forwarded into the guest.
+              # 22 is SSH, 8080 is the port the mesh sends inbound traffic to - the Istio
+              # iptables rules in the guest redirect it to Envoy on 15006.
               ports:
                 - port: 22
+                - port: 8080
         features:
           acpi: {}
           smm:
@@ -64,11 +67,12 @@ spec:
       volumes:
         - name: rootdisk
           dataVolume:
-            name: rhel-istio-proxy-rootdisk
+            name: __VM_NAME__-rootdisk
         - name: cloudinitdisk
           cloudInitNoCloud:
             userData: |
               #cloud-config
+              hostname: __VM_NAME__
               user: admin
               password: admin
               chpasswd:

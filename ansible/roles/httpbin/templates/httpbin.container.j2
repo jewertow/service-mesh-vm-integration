@@ -1,0 +1,23 @@
+# Quadlet unit - systemd generates httpbin.service from this file on daemon-reload.
+[Unit]
+Description=httpbin
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image={{ httpbin_image }}
+Exec=-port {{ httpbin_port }}
+# The container shares the host network namespace instead of publishing the port.
+# Published ports would be DNATed by podman from nat/PREROUTING, and podman inserts
+# its jump at the head of the chain, ahead of the ISTIO_INBOUND jump appended by
+# istio-iptables. Inbound mesh traffic would then reach the container directly
+# instead of being redirected to Envoy on 15006, and the container would be handed
+# raw mTLS bytes. On the host network the Istio redirect stays in front and Envoy
+# forwards the decrypted request to 127.0.0.1:{{ httpbin_port }}.
+Network=host
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target

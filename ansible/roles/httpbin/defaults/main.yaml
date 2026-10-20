@@ -1,0 +1,4 @@
+---
+# Same image and port as samples/httpbin/httpbin.yaml in the Istio repository
+httpbin_image: docker.io/mccutchen/go-httpbin:v2.15.0
+httpbin_port: 8080

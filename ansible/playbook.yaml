@@ -4,9 +4,10 @@
   become: true
 
   roles:
+  # istio_proxy_config_dir is set per host in the inventory - each VM joins the mesh
+  # with its own generated configuration.
   - role: istio-proxy
-    vars:
-      istio_proxy_config_dir: "{{ playbook_dir }}/../curl-vm-config"
+  - role: httpbin
 
   tasks:
   - name: Install curl

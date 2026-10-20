@@ -1,0 +1,24 @@
+---
+- name: Install podman
+  ansible.builtin.package:
+    name: podman
+    state: present
+
+- name: Deploy the httpbin Quadlet unit
+  ansible.builtin.template:
+    src: httpbin.container.j2
+    dest: /etc/containers/systemd/httpbin.container
+    mode: '0644'
+  register: httpbin_unit
+
+- name: Reload systemd to regenerate httpbin.service
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: httpbin_unit.changed
+
+# Quadlet-generated units cannot be enabled with systemctl - the [Install] section
+# of the .container file is what makes the service start on boot.
+- name: Start httpbin service
+  ansible.builtin.systemd:
+    name: httpbin.service
+    state: "{{ 'restarted' if httpbin_unit.changed else 'started' }}"

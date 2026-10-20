@@ -2,8 +2,13 @@
 all:
   children:
     istio_vms:
+      vars:
+        ansible_user: admin
+        ansible_ssh_private_key_file: ./ssh/vm-key
       hosts:
-        vm1:
-          ansible_host: ${VM_SSH_ADDR}
-          ansible_user: admin
-          ansible_ssh_private_key_file: ./ssh/vm-key
+        httpbin-internal-vm:
+          ansible_host: ${INTERNAL_VM_ADDR}
+          istio_proxy_config_dir: "{{ playbook_dir }}/../internal-vm-config"
+        httpbin-external-vm:
+          ansible_host: ${EXTERNAL_VM_ADDR}
+          istio_proxy_config_dir: "{{ playbook_dir }}/../external-vm-config"
