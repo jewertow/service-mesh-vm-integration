@@ -29,7 +29,7 @@ export VM_CONFIG=external-vm-config
 > ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo subscription-manager register --username ${RHSM_USERNAME} --password ${RHSM_PASSWORD}"
 > ```
 
-## Step 1: Install the Istio sidecar
+## Step 1: Install the Istio proxy
 
 Enable the OpenShift Service Mesh repository:
 
@@ -75,7 +75,7 @@ ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo cp cluster.env /var/lib/istio/envoy
 ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo chown -R istio-proxy /var/lib/istio /etc/certs /etc/istio/proxy /etc/istio/config /var/run/secrets"
 ```
 
-## Step 7: Start the Istio agent
+## Step 7: Start the Istio proxy
 
 ```bash
 ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo systemctl enable --now istio-proxy"
@@ -84,7 +84,7 @@ ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo systemctl enable --now istio-proxy"
 Verify the agent started successfully:
 
 ```bash
-ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo systemctl status istio-proxy"
+ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo systemctl is-active istio-proxy"
 ```
 
 ## Step 8: Run httpbin
@@ -138,12 +138,6 @@ ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo systemctl daemon-reload && sudo sys
 > [!NOTE]
 > Quadlet units are generated, so they cannot be enabled with `systemctl enable`. The `[Install]` section in the `.container` file is what makes the service start on boot.
 >
-> `Exec=` replaces the image's `CMD` instead of appending to it, and the go-httpbin image declares no `ENTRYPOINT`, so the binary has to be named explicitly. Dropping `/bin/go-httpbin` leaves podman trying to exec `-port`, and the service fails on startup and is restarted until systemd gives up:
->
-> ```
-> httpbin.service: Failed with result 'exit-code'.
-> httpbin.service: Start request repeated too quickly.
-> ```
 
 Verify httpbin answers locally:
 

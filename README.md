@@ -1,13 +1,13 @@
 # Integrating External VMs with Istio on OpenShift
 
-Integrate external virtual machines into the Istio service mesh. Each VM runs an Istio sidecar proxy, reaches the control plane through an OpenShift passthrough Route, and reaches in-mesh workloads through an east-west gateway. This lab uses KubeVirt to provision the VMs in a dedicated OpenShift cluster, but the mesh is agnostic to how the VMs are provisioned.
+Integrate external virtual machines into the Istio service mesh. Each VM runs an Istio proxy, reaches the control plane through an OpenShift passthrough Route, and reaches in-mesh workloads through an east-west gateway. This lab uses KubeVirt to provision the VMs in a dedicated OpenShift cluster, but the mesh is agnostic to how the VMs are provisioned.
 
 On top of the basic integration, the lab demonstrates the two ways a VM workload can be made discoverable to the rest of the mesh:
 
 | Approach | Hostname | Backed by |
 |---|---|---|
 | Kubernetes `Service` | `httpbin.internal.svc.cluster.local` | in-cluster pods **and** a `WorkloadEntry` for `httpbin-internal-vm` |
-| `ServiceEntry` | `httpbin.external.vm` | a `WorkloadEntry` for `httpbin-external-vm` only |
+| Istio `ServiceEntry` | `httpbin.external.vm` | a `WorkloadEntry` for `httpbin-external-vm` only |
 
 A `curl` client in the `client` namespace calls both. The `Service` case shows that an ordinary Kubernetes `Service` selects pods and VMs alike, so a VM can be added to an existing service without the clients knowing. The `ServiceEntry` case shows how to publish a VM-only service under a hostname that does not exist in cluster DNS at all.
 
@@ -35,7 +35,7 @@ kind: IstioCNI
 metadata:
   name: default
 spec:
-  version: v1.30-latest
+  version: v1.31-latest
   namespace: istio-cni
 EOF
 ```
@@ -89,7 +89,7 @@ kind: Istio
 metadata:
   name: default
 spec:
-  version: v1.30-latest
+  version: v1.31-latest
   namespace: istio-system
   updateStrategy:
     type: InPlace
@@ -271,7 +271,7 @@ kubectl create namespace external
 kubectl label namespace external istio-discovery=enabled
 ```
 
-Deploy the `curl` client and the in-cluster half of `httpbin.internal`, both from the upstream Istio samples:
+Deploy the `curl` client and the in-cluster half of `httpbin.internal`:
 
 ```bash
 kubectl apply -n client -f https://raw.githubusercontent.com/istio/istio/master/samples/curl/curl.yaml
@@ -300,16 +300,12 @@ kubectl get pods -n internal
 
 A `WorkloadGroup` is the template istiod uses to auto-register each VM as a `WorkloadEntry` when its proxy connects.
 
-The VM joining `httpbin.internal` carries `app: httpbin`, the label the sample `Service` selects on, plus `version: vm`
-to tell it apart from the in-cluster pods (which carry `version: v1`):
-
 ```bash
-kubectl apply -f - <<EOF
+cat > workloadgroup.yaml <<EOF
 apiVersion: networking.istio.io/v1
 kind: WorkloadGroup
 metadata:
   name: httpbin
-  namespace: internal
 spec:
   metadata:
     labels:
@@ -323,33 +319,16 @@ spec:
 EOF
 ```
 
-The VM behind the `ServiceEntry` is registered the same way, in the `external` namespace:
+The labels serve both cases: `app: httpbin` is what the sample `Service` selects on in `internal` and what the
+`ServiceEntry` selects on in `external`, while `version: vm` tells the VMs apart from the in-cluster pods
+(which carry `version: v1`).
+
+Apply the same file to both namespaces:
 
 ```bash
-kubectl apply -f - <<EOF
-apiVersion: networking.istio.io/v1
-kind: WorkloadGroup
-metadata:
-  name: httpbin
-  namespace: external
-spec:
-  metadata:
-    labels:
-      app: httpbin
-      version: vm
-  template:
-    serviceAccount: httpbin
-    network: vm-network
-    ports:
-      http: 8080
-EOF
+kubectl apply -f workloadgroup.yaml -n internal
+kubectl apply -f workloadgroup.yaml -n external
 ```
-
-> [!NOTE]
-> `template.ports` is what makes inbound traffic work on the VM. `istioctl` turns it into `ISTIO_INBOUND_PORTS=8080`
-> in `cluster.env`, and `istio-iptables` uses that to redirect traffic arriving on port `8080` to Envoy on `15006`.
-> Without it the value defaults to `*`, which captures every inbound port except the few `istio-start.sh` excludes
-> (`22`, `15020`, `15021`, `15090`).
 
 ### Step 8: Publish the external VM with a ServiceEntry
 
@@ -389,16 +368,14 @@ EOF
 ### Step 9: Configure access logging for the proxies running in the VMs
 
 The `vm-file-logger` provider from [Step 3](#step-3-install-istio-control-plane) is applied to the VM workloads only,
-selected by the `version: vm` label, so the in-cluster httpbin pods keep logging to stdout:
+selected by the `version: vm` label, so the in-cluster httpbin pods keep logging to stdout.
 
 ```bash
-for ns in internal external; do
-kubectl apply -f - <<EOF
+cat > telemetry.yaml <<EOF
 apiVersion: telemetry.istio.io/v1
 kind: Telemetry
 metadata:
   name: vm-access-logging
-  namespace: ${ns}
 spec:
   selector:
     matchLabels:
@@ -407,7 +384,13 @@ spec:
   - providers:
     - name: vm-file-logger
 EOF
-done
+```
+
+Apply the same file to both namespaces:
+
+```bash
+kubectl apply -f telemetry.yaml -n internal
+kubectl apply -f telemetry.yaml -n external
 ```
 
 ## VM provisioning (optional)
@@ -482,22 +465,41 @@ for dir in internal-vm-config external-vm-config; do
 done
 ```
 
+Confirm all three patches landed in both directories before copying anything to the VMs:
+
+```bash
+grep -H -E 'binaryPath|discoveryAddress' internal-vm-config/mesh.yaml external-vm-config/mesh.yaml
+grep -H CA_ADDR internal-vm-config/cluster.env external-vm-config/cluster.env
+```
+
+Expected — `binaryPath` present, and both addresses pointing at the Route, not at `istiod.istio-system.svc:15012`:
+
+```
+internal-vm-config/mesh.yaml:  binaryPath: /usr/bin/envoy
+internal-vm-config/mesh.yaml:  discoveryAddress: istiod.istio-system.svc.<BASE_DOMAIN>:443
+external-vm-config/mesh.yaml:  binaryPath: /usr/bin/envoy
+external-vm-config/mesh.yaml:  discoveryAddress: istiod.istio-system.svc.<BASE_DOMAIN>:443
+internal-vm-config/cluster.env:CA_ADDR=istiod.istio-system.svc.<BASE_DOMAIN>:443
+external-vm-config/cluster.env:CA_ADDR=istiod.istio-system.svc.<BASE_DOMAIN>:443
+```
+
 > [!IMPORTANT]
-> `discoveryAddress` alone is not enough. The istio-agent uses two separate connections to istiod — xDS and the CA (CSR) — and only the xDS one reads `discoveryAddress` from `mesh.yaml`. `istio-start.sh` derives the CA endpoint on its own and defaults it to the in-cluster name:
+> `istioctl x workload entry configure` overwrites `mesh.yaml` and `cluster.env` from scratch, so **every** time it is
+> re-run, this patch block has to be re-run too. That happens more often than it sounds: `istio-token` is a short-lived
+> service account token, so a config directory generated hours earlier is already stale and has to be regenerated
+> before the VM can authenticate.
 >
-> ```sh
-> DEFAULT_PILOT_ADDRESS="istiod.${ISTIO_SYSTEM_NAMESPACE}.svc:15012"
-> CA_ADDR=${CA_ADDR:-${CUSTOM_PILOT_ADDRESS:-${DEFAULT_PILOT_ADDRESS}}}
+> Treat generate-and-patch as one unit, and never copy a directory to a VM without running the `grep` check above
+> first. An unpatched `mesh.yaml` keeps the default `binaryPath: /usr/local/bin/envoy`, which does not exist in the
+> `istio-proxy` RPM — the RPM ships `/usr/bin/envoy`. The agent then exits immediately and no `WorkloadEntry` is ever
+> created:
+>
+> ```
+> error   Envoy exited with error: fork/exec /usr/local/bin/envoy: no such file or directory
 > ```
 >
-> That name used to resolve only because of the `/etc/hosts` entry. Without `CA_ADDR` set, xDS connects over the Route but certificate signing fails:
->
-> ```
-> warn   ca              ca request failed, starting attempt 1 in 93.91323ms
-> error  citadelclient   failed to sign CSR: create certificate: rpc error: code = Unavailable desc = connection error
-> ```
->
-> `istio-start.sh` sources `cluster.env` before applying that default, so a value set there wins.
+> The re-run of the block is safe: it deletes the lines it manages before re-adding them, so patching twice does not
+> duplicate `binaryPath` or `CA_ADDR`.
 
 ### Step 11: Configure the VMs
 

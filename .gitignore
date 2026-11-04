@@ -2,5 +2,7 @@ kubeconfigs
 *-vm-config
 ansible/inventory.yaml
 istio-ca.crt
+workloadgroup.yaml
+telemetry.yaml
 ssh/
 *.tar.gz

@@ -39,7 +39,7 @@ done
 Each VM needs an address that is reachable **from outside its own cluster**, on two ports:
 
 - `22` — SSH, used to configure the VM
-- `8080` — the port the mesh sends inbound traffic to; the Istio iptables rules inside the guest redirect it to Envoy on `15006`
+- `8080` — the port in-cluster sidecars open the connection to; the Istio iptables rules inside the guest redirect it to Envoy on `15006`
 
 Port `8080` is what makes service discovery work in the mesh-to-VM direction. The address assigned here is the address that ends up in the auto-registered `WorkloadEntry`, so in-cluster clients dial it directly.
 
@@ -58,7 +58,7 @@ spec:
     port: 22
     targetPort: 22
     protocol: TCP
-  - name: mesh-inbound
+  - name: http
     port: 8080
     targetPort: 8080
     protocol: TCP
