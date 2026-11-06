@@ -18,17 +18,17 @@ Both VMs run the same httpbin container image as `samples/httpbin/httpbin.yaml` 
 - OpenShift cluster with OpenShift Service Mesh 3 operator installed
 - Two external VMs, or another OpenShift cluster with OpenShift Virtualization installed
 - `kubectl` and `istioctl` CLI tools installed
-- The VMs can resolve and reach names under the cluster's ingress domain (see [Step 2](#step-2-export-the-cluster-base-domain))
-- The mesh cluster can reach each VM on TCP port `8080` (see [Step 3 of VM provisioning](VM_PROVISIONING.md#step-3-expose-the-vms-with-loadbalancer-services))
+- The VMs can resolve cluster's ingress domain name and reach its address
+- The mesh cluster can reach each VM on TCP port `8080`
 
 ## VM provisioning (optional)
 
-This step is optional. The rest of the guide only needs two VMs reachable on TCP ports `22` and `8080`, with their
-addresses exported as `INTERNAL_VM_ADDR` and `EXTERNAL_VM_ADDR` — those are the addresses
+This step is optional. The rest of the guide only needs two VMs reachable on TCP ports `22` and `8080`,
+with their addresses exported as `INTERNAL_VM_ADDR` and `EXTERNAL_VM_ADDR` — those are the addresses
 [Step 10](#step-10-generate-vm-configuration-files) registers in the mesh.
 
-If you already have two such VMs, export their addresses and continue with the [mesh setup](#mesh-setup). To provision
-them with KubeVirt instead, see [VM_PROVISIONING.md](VM_PROVISIONING.md).
+If you already have two such VMs, export their addresses and continue with the [mesh setup](#mesh-setup).
+To provision them with KubeVirt instead, see [VM_PROVISIONING.md](VM_PROVISIONING.md).
 
 ## Mesh setup
 
