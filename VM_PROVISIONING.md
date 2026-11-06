@@ -18,6 +18,10 @@ The lab needs two VMs:
   hostnames. The VMs are exposed with a Kubernetes `LoadBalancer` service in [Step 3](#step-3-expose-the-vms-with-loadbalancer-services),
   and the assigned address is registered in the `WorkloadEntry`, which does not accept hostnames.
 
+> [!NOTE]
+> A `NodePort` service can be used instead of `LoadBalancer`, but the `WorkloadGroup` port mapping in the main guide
+> would need to be adjusted from `http: 8080` to match the assigned `NodePort`.
+
 ## Step 1: Generate an SSH key pair
 
 Generate an SSH key pair for connecting to the VMs:
