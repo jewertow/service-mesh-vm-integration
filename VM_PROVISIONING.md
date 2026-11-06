@@ -12,6 +12,12 @@ The lab needs two VMs:
 > [!Note]
 > KubeVirt VMs support direct console access via `virtctl ssh`/`virtctl console`, which does not require SSH key setup. However, this lab configures standard SSH access to simulate a real external VM that is not running on OpenShift.
 
+## Prerequisites
+
+- The cluster running the VMs supports `LoadBalancer` services, and its load balancer assigns IP addresses, not
+  hostnames. The VMs are exposed with a Kubernetes `LoadBalancer` service in [Step 3](#step-3-expose-the-vms-with-loadbalancer-services),
+  and the assigned address is registered in the `WorkloadEntry`, which does not accept hostnames.
+
 ## Step 1: Generate an SSH key pair
 
 Generate an SSH key pair for connecting to the VMs:
@@ -75,14 +81,6 @@ export INTERNAL_VM_ADDR=$(kubectl get svc httpbin-internal-vm-lb -n vms -o jsonp
 export EXTERNAL_VM_ADDR=$(kubectl get svc httpbin-external-vm-lb -n vms -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 echo "internal VM: ${INTERNAL_VM_ADDR}, external VM: ${EXTERNAL_VM_ADDR}"
 ```
-
-> [!IMPORTANT]
-> These must be IP addresses, not hostnames - they are written into the `WorkloadEntry` `address` field, which only accepts IPs for statically resolved endpoints.
-> If your load balancer publishes a hostname instead (e.g. on AWS), resolve it first:
->
-> ```bash
-> export INTERNAL_VM_ADDR=$(getent hosts "$(kubectl get svc httpbin-internal-vm-lb -n vms -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')" | awk '{print $1}' | head -1)
-> ```
 
 ## Step 4: Verify SSH connectivity
 
