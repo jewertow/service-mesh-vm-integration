@@ -78,7 +78,7 @@ ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo chown -R istio-proxy /var/lib/istio
 ## Step 7: Start the Istio proxy
 
 ```bash
-ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo systemctl enable --now istio-proxy"
+ssh -i ./ssh/vm-key "admin@${VM_ADDR}" "sudo systemctl enable istio-proxy && sudo systemctl start --no-block istio-proxy"
 ```
 
 Verify the agent started successfully:

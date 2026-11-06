@@ -16,10 +16,19 @@ Both VMs run the same httpbin container image as `samples/httpbin/httpbin.yaml` 
 ## Prerequisites
 
 - OpenShift cluster with OpenShift Service Mesh 3 operator installed
-- `kubectl` and `istioctl` CLI tools installed
 - Two external VMs, or another OpenShift cluster with OpenShift Virtualization installed
+- `kubectl` and `istioctl` CLI tools installed
 - The VMs can resolve and reach names under the cluster's ingress domain (see [Step 2](#step-2-export-the-cluster-base-domain))
 - The mesh cluster can reach each VM on TCP port `8080` (see [Step 3 of VM provisioning](VM_PROVISIONING.md#step-3-expose-the-vms-with-loadbalancer-services))
+
+## VM provisioning (optional)
+
+This step is optional. The rest of the guide only needs two VMs reachable on TCP ports `22` and `8080`, with their
+addresses exported as `INTERNAL_VM_ADDR` and `EXTERNAL_VM_ADDR` — those are the addresses
+[Step 10](#step-10-generate-vm-configuration-files) registers in the mesh.
+
+If you already have two such VMs, export their addresses and continue with the [mesh setup](#mesh-setup). To provision
+them with KubeVirt instead, see [VM_PROVISIONING.md](VM_PROVISIONING.md).
 
 ## Mesh setup
 
@@ -393,18 +402,15 @@ kubectl apply -f telemetry.yaml -n internal
 kubectl apply -f telemetry.yaml -n external
 ```
 
-## VM provisioning (optional)
-
-This step is optional. If you already have two VMs, skip to [Step 10](#step-10-generate-vm-configuration-files) — it only
-needs their addresses in `INTERNAL_VM_ADDR` and `EXTERNAL_VM_ADDR`. For instructions on provisioning the VMs with KubeVirt,
-see [VM_PROVISIONING.md](VM_PROVISIONING.md).
-
 ## VM setup
 
 ### Step 10: Generate VM configuration files
 
 Use `istioctl` to generate the files each VM needs to join the mesh. The two VMs get separate output directories,
-because each one joins a different namespace with a different token:
+because each one joins a different namespace with a different token.
+
+This step needs the VM addresses in `INTERNAL_VM_ADDR` and `EXTERNAL_VM_ADDR` — see
+[VM provisioning](#vm-provisioning-optional):
 
 ```bash
 mkdir -p internal-vm-config external-vm-config
@@ -433,26 +439,30 @@ Each directory gets:
 - `istio-token` — Kubernetes token for certificate retrieval
 - `mesh.yaml` — proxy configuration with discovery address
 - `root-cert.pem` — root certificate for mTLS
-- `hosts` — DNS entries for istiod resolution (not used in this setup, see below)
+- `hosts` — DNS entries for istiod resolution (not used in this setup — the VM resolves istiod over DNS)
 
 > [!IMPORTANT]
-> `--externalIP` writes `ISTIO_SVC_IP` into `cluster.env`. `istio-start.sh` passes it to the agent as `INSTANCE_IP`,
-> which is the address istiod records in the auto-registered `WorkloadEntry` — and therefore the address in-cluster
-> clients dial.
+> Either flag sets the address in-cluster clients dial. Which one to use depends on whether the traffic is NAT'd on
+> the way from the mesh cluster to the VM:
 >
-> Without it the VM reports whatever `hostname --all-ip-addresses` returns first. On a KubeVirt VM with masquerade
-> networking that is `10.0.2.2`, an address that exists only inside the guest. Discovery would still look correct
-> (`kubectl get workloadentries` shows an entry) but every request from the cluster would fail to connect.
+> - `--externalIP` — there is NAT on the connection path, so the VM is reached on an address it does not own. That is
+>   the case in this lab: the VMs sit behind the load balancer created during
+>   [VM provisioning](#vm-provisioning-optional), so this is the load balancer address.
+> - `--internalIP` — in-cluster workloads reach the VM's own address directly, with no NAT in between. Pass the VM's
+>   address.
 >
-> This flag is only needed when the VM's own IP is not routable from the mesh cluster. A VM with a routable address
-> can be registered without it.
+> The two are mutually exclusive. With `--externalIP`, the proxy also rewrites health probes to target `localhost`
+> instead of the registered address, which the VM itself cannot reach; `--internalIP` needs no such rewrite.
 
 > [!NOTE]
-> `--ingressIP` is intentionally omitted. That flag exists only to generate the `hosts` file, which pins the in-cluster istiod name to the gateway IP. The VM reaches istiod through a Route hostname that resolves over public DNS, so no `/etc/hosts` entry is needed and the generated `hosts` file is left unused. `istioctl` prints a warning about this, which is safe to ignore:
+> `istioctl` prints this warning, which is safe to ignore:
 >
 > ```
 > Could not auto-detect IP for istiod.istio-system.svc/istio-system. Use --ingressIP to manually specify the Gateway address to reach istiod from the VM.
 > ```
+>
+> `--ingressIP` is only needed when the VM has to reach istiod by IP. Here it reaches istiod by the Route hostname
+> from [Step 5](#step-5-expose-the-control-plane-to-the-vms), which the VM resolves over public DNS.
 
 Patch the generated `mesh.yaml` of both VMs to set the correct Envoy binary path and point the discovery address at the
 Route, and append `CA_ADDR` to `cluster.env` so the CA endpoint goes through the Route as well:
@@ -464,42 +474,6 @@ for dir in internal-vm-config external-vm-config; do
   echo "CA_ADDR=istiod.istio-system.svc.${BASE_DOMAIN}:443" >> "${dir}/cluster.env"
 done
 ```
-
-Confirm all three patches landed in both directories before copying anything to the VMs:
-
-```bash
-grep -H -E 'binaryPath|discoveryAddress' internal-vm-config/mesh.yaml external-vm-config/mesh.yaml
-grep -H CA_ADDR internal-vm-config/cluster.env external-vm-config/cluster.env
-```
-
-Expected — `binaryPath` present, and both addresses pointing at the Route, not at `istiod.istio-system.svc:15012`:
-
-```
-internal-vm-config/mesh.yaml:  binaryPath: /usr/bin/envoy
-internal-vm-config/mesh.yaml:  discoveryAddress: istiod.istio-system.svc.<BASE_DOMAIN>:443
-external-vm-config/mesh.yaml:  binaryPath: /usr/bin/envoy
-external-vm-config/mesh.yaml:  discoveryAddress: istiod.istio-system.svc.<BASE_DOMAIN>:443
-internal-vm-config/cluster.env:CA_ADDR=istiod.istio-system.svc.<BASE_DOMAIN>:443
-external-vm-config/cluster.env:CA_ADDR=istiod.istio-system.svc.<BASE_DOMAIN>:443
-```
-
-> [!IMPORTANT]
-> `istioctl x workload entry configure` overwrites `mesh.yaml` and `cluster.env` from scratch, so **every** time it is
-> re-run, this patch block has to be re-run too. That happens more often than it sounds: `istio-token` is a short-lived
-> service account token, so a config directory generated hours earlier is already stale and has to be regenerated
-> before the VM can authenticate.
->
-> Treat generate-and-patch as one unit, and never copy a directory to a VM without running the `grep` check above
-> first. An unpatched `mesh.yaml` keeps the default `binaryPath: /usr/local/bin/envoy`, which does not exist in the
-> `istio-proxy` RPM — the RPM ships `/usr/bin/envoy`. The agent then exits immediately and no `WorkloadEntry` is ever
-> created:
->
-> ```
-> error   Envoy exited with error: fork/exec /usr/local/bin/envoy: no such file or directory
-> ```
->
-> The re-run of the block is safe: it deletes the lines it manages before re-adding them, so patching twice does not
-> duplicate `binaryPath` or `CA_ADDR`.
 
 ### Step 11: Configure the VMs
 
