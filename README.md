@@ -308,6 +308,7 @@ kubectl get pods -n internal
 ### Step 7: Register the VMs with WorkloadGroups
 
 A `WorkloadGroup` is the template istiod uses to auto-register each VM as a `WorkloadEntry` when its proxy connects.
+It is also the place to override the proxy settings that differ on a VM, through the `proxy.istio.io/config` annotation:
 
 ```bash
 cat > workloadgroup.yaml <<EOF
@@ -315,6 +316,12 @@ apiVersion: networking.istio.io/v1
 kind: WorkloadGroup
 metadata:
   name: httpbin
+  annotations:
+    proxy.istio.io/config: |
+      binaryPath: /usr/bin/envoy
+      discoveryAddress: istiod.istio-system.svc.${BASE_DOMAIN}:443
+      proxyMetadata:
+        CA_ADDR: istiod.istio-system.svc.${BASE_DOMAIN}:443
 spec:
   metadata:
     labels:
@@ -331,6 +338,16 @@ EOF
 The labels serve both cases: `app: httpbin` is what the sample `Service` selects on in `internal` and what the
 `ServiceEntry` selects on in `external`, while `version: vm` tells the VMs apart from the in-cluster pods
 (which carry `version: v1`).
+
+The annotation is read by `istioctl x workload entry configure` in
+[Step 10](#step-10-generate-vm-configuration-files), which merges it into the files generated for each VM:
+
+- `binaryPath` — the RPM installs Envoy at `/usr/bin/envoy`, not at the default `/usr/local/bin/envoy`.
+- `discoveryAddress` — points XDS at the Route from [Step 5](#step-5-expose-the-control-plane-to-the-vms) instead of
+  the in-cluster `istiod.istio-system.svc:15012`, which the VM cannot reach.
+- `proxyMetadata.CA_ADDR` — sends certificate signing requests through the same Route.
+
+`${BASE_DOMAIN}` is expanded by the shell when the file is written, so the annotation holds the resolved hostname.
 
 Apply the same file to both namespaces:
 
@@ -464,15 +481,19 @@ Each directory gets:
 > `--ingressIP` is only needed when the VM has to reach istiod by IP. Here it reaches istiod by the Route hostname
 > from [Step 5](#step-5-expose-the-control-plane-to-the-vms), which the VM resolves over public DNS.
 
-Patch the generated `mesh.yaml` of both VMs to set the correct Envoy binary path and point the discovery address at the
-Route, and append `CA_ADDR` to `cluster.env` so the CA endpoint goes through the Route as well:
+Confirm the overrides from [Step 7](#step-7-register-the-vms-with-workloadgroups) made it into the generated files:
 
 ```bash
-for dir in internal-vm-config external-vm-config; do
-  sed -i '/defaultConfig:/a\  binaryPath: /usr/bin/envoy' "${dir}/mesh.yaml"
-  sed -i "s|discoveryAddress: .*|discoveryAddress: istiod.istio-system.svc.${BASE_DOMAIN}:443|" "${dir}/mesh.yaml"
-  echo "CA_ADDR=istiod.istio-system.svc.${BASE_DOMAIN}:443" >> "${dir}/cluster.env"
-done
+grep -E "binaryPath|discoveryAddress" internal-vm-config/mesh.yaml
+grep CA_ADDR internal-vm-config/cluster.env
+```
+
+Expected output:
+
+```
+  binaryPath: /usr/bin/envoy
+  discoveryAddress: istiod.istio-system.svc.${BASE_DOMAIN}:443
+CA_ADDR=istiod.istio-system.svc.${BASE_DOMAIN}:443
 ```
 
 ### Step 11: Configure the VMs
